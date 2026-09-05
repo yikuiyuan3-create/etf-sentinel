@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_macros.html" import feature_value, mode_badge, number, percent, state_badge, timestamp, value_or_dash %}
+
+{% block title %}信号证据链{% endblock %}
+
+{% block content %}
+{% set instrument = instrument|default(signal.instrument|default({}, true), true) %}
+{% set snapshot = snapshot|default(signal.snapshot|default({}, true), true) %}
+{% set model = model|default(signal.model_version|default({}, true), true) %}
+<nav class="breadcrumb" aria-label="面包屑"><a href="/">管理看板</a><span>/</span><span>信号证据链</span></nav>
+
+<section class="page-heading page-heading--detail">
+  <div>
+    <p class="eyebrow">{{ mode_badge(signal.data_mode) }} · {{ value_or_dash(instrument.asset_class) }} / {{ value_or_dash(instrument.region) }}</p>
+    <h1>{{ value_or_dash(instrument.name_zh) }}</h1>
+    <p>{{ value_or_dash(instrument.provider_symbol) }} · 内部 UUID：<code>{{ value_or_dash(signal.instrument_id) }}</code></p>
+  </div>
+  <div class="hero-state">{{ state_badge(signal.state) }}<small>Demo 虚构标的候选状态，不是交易指令或真实模型批准</small></div>
+</section>
+
+<section class="metric-grid metric-grid--detail" aria-label="信号概要">
+  <article class="metric-card metric-card--primary"><span class="metric-card__label">规则情景强度（启发式、未校准）</span><strong>{{ percent(signal.probability) }}</strong><small>研究期限 {{ number(signal.horizon_days, 0) }} 交易日 · 展示范围 {{ percent(signal.confidence_interval[0]) if signal.confidence_interval else '—' }} – {{ percent(signal.confidence_interval[1]) if signal.confidence_interval else '—' }}，不具有统计置信区间含义</small></article>
+  <article class="metric-card"><span class="metric-card__label">数据完整性置信度（启发式）</span><strong>{{ percent(signal.confidence) }}</strong><small>受 Demo 数据质量和规则模型限制约束，不是预测把握</small></article>
+  <article class="metric-card"><span class="metric-card__label">综合评分</span><strong>{{ number(signal.composite_score, 3) }}</strong><small>新闻分项受权重上限约束</small></article>
+  <article class="metric-card"><span class="metric-card__label">风险预算参考范围</span><strong>{{ percent(signal.suggested_risk_budget_min) }} – {{ percent(signal.suggested_risk_budget_max) }}</strong><small>需人工结合组合上限复核</small></article>
+</section>
+
+<div class="two-column-grid">
+  <section class="panel" aria-labelledby="factor-title">
+    <div class="panel__header"><div><p class="section-index">A</p><h2 id="factor-title">分项解释</h2></div></div>
+    <div class="factor-list">
+      {% for label, value in [('市场 / 动量与趋势', signal.market_score), ('宏观风险状态', signal.macro_score), ('新闻事件', signal.news_score), ('流动性 / 价差', signal.liquidity_score)] %}
+      <div><div><span>{{ label }}</span><strong>{{ number(value, 3) }}</strong></div><progress max="1" value="{{ value|abs if value is not none and value is not undefined else 0 }}">{{ number(value, 3) }}</progress></div>
+      {% endfor %}
+    </div>
+    {% if signal.feature_values %}<details><summary>查看特征值</summary><p class="microcopy">仅规整显示精度；原始数值、数据时点与证据链不变。</p><dl class="feature-grid">{% for key, value in signal.feature_values.items() %}<div><dt>{{ key }}</dt><dd>{{ feature_value(value, key) }}</dd></div>{% endfor %}</dl></details>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="identity-title">
+    <div class="panel__header"><div><p class="section-index">B</p><h2 id="identity-title">标的与数据标识</h2></div></div>
+    <dl class="definition-list">
+      <div><dt>FIGI</dt><dd>{{ value_or_dash(instrument.figi) }}</dd></div><div><dt>ISIN</dt><dd>{{ value_or_dash(instrument.isin) }}</dd></div>
+      <div><dt>MIC / 交易所</dt><dd>{{ value_or_dash(instrument.mic) }} / {{ value_or_dash(instrument.exchange) }}</dd></div><div><dt>币种</dt><dd>{{ value_or_dash(instrument.currency) }}</dd></div>
+      <div><dt>数据截止</dt><dd>{{ timestamp(signal.data_as_of) }}</dd></div><div><dt>首次可用</dt><dd>{{ timestamp(signal.available_at) }}</dd></div>
+      <div><dt>延迟状态</dt><dd>{{ value_or_dash(signal.latency_status) }}</dd></div><div><dt>数据模式</dt><dd>{{ mode_badge(signal.data_mode) }}</dd></div>
+    </dl>
+  </section>
+</div>
+
+<div class="two-column-grid">
+  <section class="panel evidence-panel" aria-labelledby="support-title"><div class="panel__header"><div><p class="section-index">C</p><h2 id="support-title">支持证据</h2></div></div><ul class="evidence-list evidence-list--support">{% for evidence in signal.supporting_evidence %}<li><strong>{{ evidence.title|default(evidence.factor|default('支持因素')) }}</strong><p>{{ evidence.explanation|default(evidence.detail|default(evidence.value|default('—'))) }}</p></li>{% else %}<li class="empty-state">未记录支持证据。</li>{% endfor %}</ul></section>
+  <section class="panel evidence-panel" aria-labelledby="oppose-title"><div class="panel__header"><div><p class="section-index">D</p><h2 id="oppose-title">反方证据</h2></div></div><ul class="evidence-list evidence-list--oppose">{% for evidence in signal.opposing_evidence %}<li><strong>{{ evidence.title|default(evidence.factor|default('反方因素')) }}</strong><p>{{ evidence.explanation|default(evidence.detail|default(evidence.value|default('—'))) }}</p></li>{% else %}<li class="empty-state">未记录反方证据；这不代表风险为零。</li>{% endfor %}</ul></section>
+</div>
+
+<section class="panel panel--wide" aria-labelledby="conditions-title">
+  <div class="panel__header"><div><p class="section-index">E</p><h2 id="conditions-title">触发、失效与风险门禁</h2></div></div>
+  <div class="three-column-grid">
+    <div><h3>触发条件</h3><ul class="plain-list">{% for item in signal.trigger_conditions %}<li>{{ item }}</li>{% else %}<li>未记录。</li>{% endfor %}</ul></div>
+    <div><h3>失效条件</h3><ul class="plain-list">{% for item in signal.invalidation_conditions %}<li>{{ item }}</li>{% else %}<li>未记录。</li>{% endfor %}</ul></div>
+    <div><h3>风险规则命中</h3><ul class="plain-list">{% for item in signal.risk_rules_hit %}<li>{{ item }}</li>{% else %}<li>未命中已配置风险规则。</li>{% endfor %}</ul></div>
+  </div>
+</section>
+
+<div class="two-column-grid">
+  <section class="panel" aria-labelledby="trace-title"><div class="panel__header"><div><p class="section-index">F</p><h2 id="trace-title">可复现追溯</h2></div></div><dl class="definition-list"><div><dt>数据快照</dt><dd><code>{{ value_or_dash(snapshot.snapshot_hash) }}</code></dd></div><div><dt>快照来源</dt><dd>{{ value_or_dash(snapshot.source_uri) }}</dd></div><div><dt>模型</dt><dd>{{ value_or_dash(model.model_name) }} / {{ value_or_dash(model.version) }}</dd></div><div><dt>特征版本</dt><dd>{{ value_or_dash(model.feature_version) }}</dd></div><div><dt>代码版本</dt><dd>{{ value_or_dash(signal.code_version) }}</dd></div><div><dt>信号幂等键</dt><dd><code>{{ value_or_dash(signal.idempotency_key) }}</code></dd></div></dl></section>
+  <section class="panel" aria-labelledby="sources-title"><div class="panel__header"><div><p class="section-index">G</p><h2 id="sources-title">来源链接与方法局限</h2></div></div><ul class="source-list">{% for link in signal.source_links %}{% if link.startswith('https://') %}<li><a href="{{ link }}" target="_blank" rel="noopener noreferrer nofollow">{{ link }}</a></li>{% else %}<li>已隐藏非 HTTPS 来源地址</li>{% endif %}{% else %}<li>未记录来源链接。</li>{% endfor %}</ul><h3>方法局限</h3><ul class="plain-list">{% for item in signal.limitations %}<li>{{ item }}</li>{% else %}<li>模型可能错误、遗漏或滞后；历史表现不代表未来。</li>{% endfor %}</ul></section>
+</div>
+
+<p class="detail-back"><a class="secondary-button" href="/">← 返回管理看板</a></p>
+{% endblock %}

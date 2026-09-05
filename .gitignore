@@ -1,0 +1,15 @@
+.env
+.venv/
+.uv-cache/
+.uv-python/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+var/
+*.db
+*.sqlite*
+*.parquet
+*.dump
+*.log
+.DS_Store

@@ -1,0 +1,84 @@
+{% macro value_or_dash(value) -%}
+  {{ value if value is not none and value is not undefined and value != '' else '—' }}
+{%- endmacro %}
+
+{% macro percent(value, digits=1) -%}
+  {%- if value is number and value == value and value|string|lower not in ['inf', '-inf'] -%}
+    {%- set rounded = (value * 100)|round(digits) -%}
+    <span class="numeric" data-value="{{ value }}">{{ '{:,.{}f}'.format(0 if rounded == 0 else rounded, digits) }}%</span>
+  {%- else -%}
+    <span class="numeric">—</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro number(value, digits=2) -%}
+  {%- if value is number and value == value and value|string|lower not in ['inf', '-inf'] -%}
+    {%- set rounded = value|round(digits) -%}
+    <span class="numeric" data-value="{{ value }}">{{ '{:,.{}f}'.format(0 if rounded == 0 else rounded, digits) }}</span>
+  {%- else -%}
+    <span class="numeric">—</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro money(value, currency='CNY') -%}
+  {%- if value is number and value == value and value|string|lower not in ['inf', '-inf'] -%}
+    {%- set rounded = value|round(2) -%}
+    <span class="numeric" data-value="{{ value }}">{{ currency }} {{ '{:,.2f}'.format(0 if rounded == 0 else rounded) }}</span>
+  {%- else -%}
+    <span class="numeric">—</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro timestamp(value) -%}
+  {%- if value is not none and value is not undefined and value != '' -%}
+    {# SQLAlchemy's SQLite timestamps omit tzinfo; persisted fact timestamps are UTC. #}
+    {%- set raw = value.isoformat() if value.isoformat is defined else value|string -%}
+    {%- if value.isoformat is defined and value.tzinfo is defined and value.tzinfo is none -%}
+      {%- set raw = raw ~ '+00:00' -%}
+    {%- endif -%}
+    {%- set suffix = raw[-6:] -%}
+    {%- set known_zone = raw.endswith('Z') or (suffix[0:1] in ['+', '-'] and suffix[3:4] == ':') -%}
+    {%- if known_zone -%}
+      <time class="timestamp" datetime="{{ raw }}" title="记录时间：{{ raw }}">{{ raw[:19]|replace('T', ' ') }} <span class="time-zone">{{ 'UTC' if raw.endswith('Z') or suffix == '+00:00' else 'UTC' ~ suffix }}</span></time>
+    {%- else -%}
+      <span class="timestamp">{{ raw }}（时区未记录）</span>
+    {%- endif -%}
+  {%- else -%}
+    —
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro feature_value(value, key='') -%}
+  {%- if value is mapping -%}
+    <details class="feature-nested"><summary>结构化记录（{{ number(value|length, 0) }} 项）</summary><dl class="definition-list">{% for item_key, item in value.items() %}<div><dt>{{ item_key }}</dt><dd>{{ feature_value(item, item_key) }}</dd></div>{% endfor %}</dl></details>
+  {%- elif value is sequence and value is not string -%}
+    <details class="feature-nested"><summary>记录列表（{{ number(value|length, 0) }} 项）</summary><ul class="plain-list">{% for item in value %}<li>{{ feature_value(item, key) }}</li>{% endfor %}</ul></details>
+  {%- elif value is boolean -%}
+    {{ '是' if value else '否' }}
+  {%- elif value is number -%}
+    {%- if key in ['momentum_1m', 'momentum_3m', 'momentum_6m', 'momentum_12m', 'annualized_volatility', 'downside_volatility', 'max_drawdown', 'expense_ratio', 'tracking_error'] -%}
+      {{ percent(value) }}
+    {%- elif key in ['sma_50', 'sma_200', 'median_notional_63d'] -%}
+      {{ number(value, 2) }}
+    {%- else -%}
+      {{ number(value, 3) }}
+    {%- endif -%}
+  {%- elif value is string and (key.endswith('_at') or key in ['as_of', 'event_time']) -%}
+    {{ timestamp(value) }}
+  {%- else -%}
+    {{ value_or_dash(value) }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro state_badge(state) -%}
+  {% set normalized = state|default('NO_ACTION', true) %}
+  <span class="status-badge status-{{ normalized|lower|replace('_', '-') }}">{{ normalized }}</span>
+{%- endmacro %}
+
+{% macro mode_badge(mode) -%}
+  <span class="mode-badge" title="演示夹具，不是真实市场数据">{{ mode|default('DEMO_FIXTURE', true) }}</span>
+{%- endmacro %}
+
+{% macro empty_row(columns, message='暂无可展示记录') -%}
+  <tr class="empty-row"><td colspan="{{ columns }}">{{ message }}</td></tr>
+{%- endmacro %}

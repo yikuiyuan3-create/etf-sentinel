@@ -1,0 +1,20 @@
+{
+  "name": "etf-sentinel-internal",
+  "interface": {
+    "displayName": "Etf Sentinel Internal"
+  },
+  "plugins": [
+    {
+      "name": "etf-sentinel",
+      "source": {
+        "source": "local",
+        "path": "./plugins/etf-sentinel"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

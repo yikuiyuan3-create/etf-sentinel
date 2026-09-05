@@ -1,0 +1,4 @@
+interface:
+  display_name: "ETF Sentinel 内部研究"
+  short_description: "检查本地 ETF 演示风险、小时监测、供应商许可与模型状态，保持模拟和真实边界"
+  default_prompt: "使用 $etf-sentinel 检查本地数据健康，并解释演示研究状态和方法局限。"

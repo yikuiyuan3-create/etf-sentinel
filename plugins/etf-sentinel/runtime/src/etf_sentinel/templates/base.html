@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}ETF Sentinel{% endblock %} · 内部研究</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  <script src="{{ url_for('static', path='/monitor.js') }}" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous" defer></script>
+  <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+</head>
+<body data-data-mode="DEMO_FIXTURE" {% block body_attributes %}{% endblock %}>
+  <a class="skip-link" href="#main-content">跳至主要内容</a>
+
+  <div class="demo-ribbon" role="status" aria-label="当前数据模式">
+    <span class="demo-ribbon__mark">DEMO_FIXTURE</span>
+    <span>固定可复现演示数据 · 不是实时行情 · 不得用于交易</span>
+  </div>
+
+  <header class="site-header">
+    <div class="brand-block">
+      <a class="brand" href="/" aria-label="ETF Sentinel 首页">
+        <span class="brand__sentinel" aria-hidden="true">S</span>
+        <span><strong>ETF Sentinel</strong><small>ETF 决策支持与风险预警</small></span>
+      </a>
+      <span class="scope-chip">企业自有资金 · 封闭式内部研究</span>
+    </div>
+    <nav class="top-nav" aria-label="主要导航">
+      <a href="/#overview">风险总览</a>
+      <a href="/#signals">ETF 筛选</a>
+      <a href="/#alerts">预警中心</a>
+      <a href="/#governance">治理与审计</a>
+    </nav>
+  </header>
+
+  <aside class="compliance-notice" aria-label="重要声明">
+    <strong>内部研究边界</strong>
+    <p>本系统仅供本公司授权人员开展内部研究和风险监测。内容由统计模型和人工智能生成，可能错误、遗漏或滞后，不构成证券投资建议、收益承诺或交易指令；历史或回测表现不代表未来。任何投资决定须由授权人员结合独立资料、风险承受能力和持牌机构意见审慎作出，交易仅可在合法持牌券商端人工确认。</p>
+  </aside>
+
+  <main id="main-content" class="page-shell" tabindex="-1">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <span>ETF Sentinel · 第一阶段 MVP</span>
+    <span>TRADING_MODE=paper · 无券商连接 · 无订单入口</span>
+    <span>时间显示：上海时区；无脚本时保留记录时区</span>
+    <span>DEMO_FIXTURE</span>
+  </footer>
+</body>
+</html>

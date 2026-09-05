@@ -1,0 +1,178 @@
+name: etf-sentinel
+
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_DB: etf_sentinel
+      POSTGRES_USER: etf_sentinel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-demo_only_change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etf_sentinel -d etf_sentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.10.1-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    healthcheck:
+      disable: true
+    env_file:
+      - path: .env
+        required: false
+    environment: &app_environment
+      APP_ENV: ${APP_ENV:-demo}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      DATABASE_URL: postgresql+psycopg://etf_sentinel:${POSTGRES_PASSWORD:-demo_only_change_me}@postgres:5432/etf_sentinel
+      REDIS_URL: redis://redis:6379/0
+      SNAPSHOT_DIR: /app/var/snapshots
+      EXPORT_DIR: /app/var/exports
+      MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-demo_fixture}
+      DEMO_EVALUATION_TIME: ${DEMO_EVALUATION_TIME:-2025-01-30T08:00:00Z}
+      DATA_STALE_AFTER_MINUTES: ${DATA_STALE_AFTER_MINUTES:-2880}
+      GLOBAL_KILL_SWITCH: ${GLOBAL_KILL_SWITCH:-false}
+      MONITORING_INTERVAL_HOURS: ${MONITORING_INTERVAL_HOURS:-1}
+      ENABLE_PUBLIC_SERVICE: ${ENABLE_PUBLIC_SERVICE:-false}
+      ENABLE_PAID_SUBSCRIPTIONS: ${ENABLE_PAID_SUBSCRIPTIONS:-false}
+      ENABLE_PURCHASE_REDIRECT: ${ENABLE_PURCHASE_REDIRECT:-false}
+      ENABLE_THIRD_PARTY_FUNDS: ${ENABLE_THIRD_PARTY_FUNDS:-false}
+      ENABLE_LIVE_TRADING: ${ENABLE_LIVE_TRADING:-false}
+      ENABLE_ORDER_ENTRY: ${ENABLE_ORDER_ENTRY:-false}
+      TWELVE_DATA_ENABLED: ${TWELVE_DATA_ENABLED:-false}
+      TWELVE_DATA_API_KEY: ${TWELVE_DATA_API_KEY:-}
+      GDELT_ENABLED: ${GDELT_ENABLED:-false}
+      EMAIL_ALERTS_ENABLED: ${EMAIL_ALERTS_ENABLED:-false}
+      WEBHOOK_ALERTS_ENABLED: ${WEBHOOK_ALERTS_ENABLED:-false}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      CONTAINER_LOCALHOST_BOUND: "true"
+      SINGLE_ETF_CAP: ${SINGLE_ETF_CAP:-0.10}
+      ASSET_CLASS_CAP: ${ASSET_CLASS_CAP:-0.45}
+      INDUSTRY_CAP: ${INDUSTRY_CAP:-0.30}
+      REGION_CAP: ${REGION_CAP:-0.60}
+      PORTFOLIO_VOLATILITY_TARGET: ${PORTFOLIO_VOLATILITY_TARGET:-0.12}
+      CASH_FLOOR: ${CASH_FLOOR:-0.20}
+      MAX_TURNOVER: ${MAX_TURNOVER:-0.25}
+      MAX_SIMULATION_LOSS: ${MAX_SIMULATION_LOSS:-0.10}
+      MAX_DRAWDOWN: ${MAX_DRAWDOWN:-0.15}
+      NEWS_RISK_REDUCTION_THRESHOLD: ${NEWS_RISK_REDUCTION_THRESHOLD:-0.70}
+      NEWS_FACTOR_WEIGHT_CAP: ${NEWS_FACTOR_WEIGHT_CAP:-0.15}
+      ALERT_COOLDOWN_MINUTES: ${ALERT_COOLDOWN_MINUTES:-240}
+      ALERT_DAILY_LIMIT: ${ALERT_DAILY_LIMIT:-50}
+      QUIET_HOURS_START: ${QUIET_HOURS_START:-22}
+      QUIET_HOURS_END: ${QUIET_HOURS_END:-7}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - snapshot_data:/app/var
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  seed:
+    build: .
+    command: ["etf-sentinel", "demo"]
+    healthcheck:
+      disable: true
+    environment: *app_environment
+    volumes:
+      - snapshot_data:/app/var
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build: .
+    command: ["etf-sentinel", "serve"]
+    environment: *app_environment
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    volumes:
+      - snapshot_data:/app/var
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["celery", "-A", "etf_sentinel.tasks:celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    environment: *app_environment
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; from etf_sentinel.tasks import celery_app; replies = celery_app.control.ping(destination=['celery@' + socket.gethostname()], timeout=3); raise SystemExit(0 if replies else 1)",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    volumes:
+      - snapshot_data:/app/var
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  beat:
+    build: .
+    command: ["celery", "-A", "etf_sentinel.tasks:celery_app", "beat", "--loglevel=INFO", "--schedule=/app/var/celerybeat-schedule"]
+    environment: *app_environment
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os; from pathlib import Path; from redis import Redis; active = b'beat' in Path('/proc/1/cmdline').read_bytes().split(bytes([0])); raise SystemExit(0 if active and Redis.from_url(os.environ['REDIS_URL'], socket_connect_timeout=3, socket_timeout=3).ping() else 1)",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    volumes:
+      - snapshot_data:/app/var
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  snapshot_data:

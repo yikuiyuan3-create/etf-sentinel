@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty_row, mode_badge, money, number, percent, state_badge, timestamp, value_or_dash %}
+
+{% block title %}管理看板{% endblock %}
+{% block body_attributes %}data-monitoring-state="pending"{% endblock %}
+
+{% block content %}
+{% set stats = summary|default(stats|default({}, true), true) %}
+{% set system = system|default({}, true) %}
+{% set signals = signals|default([], true) %}
+{% set news_events = news_events|default([], true) %}
+{% set upcoming_events = upcoming_events|default([], true) %}
+{% set portfolio = portfolio|default({}, true) %}
+{% set holdings = portfolio.holdings|default([], true) %}
+{% set backtests = backtests|default([backtest] if backtest is defined and backtest else [], true) %}
+{% set alerts = alerts|default([], true) %}
+{% set providers = providers|default([], true) %}
+{% set models = models|default([], true) %}
+{% set audit_logs = audit_logs|default([], true) %}
+{% set task_runs = task_runs|default([], true) %}
+{% set settings_view = settings_view|default({}, true) %}
+{% set baseline_labels = {'buy_and_hold': '买入持有', 'equal_weight': '全池等权', 'simple_momentum': '简单动量'} %}
+{% set period_labels = {'train': '训练期', 'validation': '验证期', 'untouched_test': '最终未触碰测试期', 'stress': '压力时期'} %}
+
+<section class="page-heading" aria-labelledby="dashboard-title">
+  <div>
+    <p class="eyebrow">研究控制台 / {{ mode_badge(data_mode|default(system.data_mode|default('DEMO_FIXTURE', true), true)) }}</p>
+    <h1 id="dashboard-title">市场状态与风险总览</h1>
+    <p>候选状态、数据健康、模型治理和模拟组合的可追溯视图。所有结果均是研究输出，不是交易指令。</p>
+  </div>
+  <dl class="run-meta">
+    <div><dt>数据截止</dt><dd>{{ timestamp(system.as_of|default(signals[0].data_as_of if signals else none)) }}</dd></div>
+    <div><dt>延迟状态</dt><dd>{{ value_or_dash(system.latency_status|default(signals[0].latency_status if signals else none)) }}</dd></div>
+    <div><dt>运行模式</dt><dd>paper</dd></div>
+    <div><dt>Kill switch</dt><dd>{{ '已开启' if settings_view.global_kill_switch else '未开启' }}</dd></div>
+  </dl>
+</section>
+
+<section id="monitor-panel" class="panel monitor-panel" aria-labelledby="monitor-title" data-status="pending">
+  <div class="panel__header">
+    <div><p class="section-index">运行监测</p><h2 id="monitor-title">定时风险分析</h2></div>
+    <span class="mode-badge">DEMO_FIXTURE</span>
+  </div>
+  <p class="monitor-boundary"><strong>真实行情：COMPLIANCE_BLOCKED，尚未接通。</strong>本区自动检查固定演示数据与风险门禁，每小时或每两小时的任务检查不等于实时行情更新，不生成盘中交易候选，也不模拟新价格。</p>
+  <div class="monitor-toolbar">
+    <button id="monitor-refresh" type="button" class="secondary-button">立即核验分析（只读）</button>
+    <a href="/" class="secondary-button">重新载入整个看板</a>
+    <span id="monitor-connection" role="status" aria-live="polite">正在等待首次服务核验</span>
+  </div>
+  <dl class="monitor-meta">
+    <div><dt>后台任务频率（环境配置）</dt><dd id="monitor-frequency">等待核验</dd></div>
+    <div><dt>本次服务核验时间</dt><dd id="monitor-checked" class="numeric">等待核验</dd></div>
+    <div><dt>下一次后台任务时间</dt><dd id="monitor-next" class="numeric">等待核验</dd></div>
+    <div><dt>最近后台任务时间</dt><dd id="monitor-scheduled" class="numeric">等待核验</dd></div>
+    <div><dt>调度状态</dt><dd id="monitor-schedule">等待核验</dd></div>
+    <div><dt>行情数据截止时间（不是核验时间）</dt><dd id="monitor-as-of" class="numeric">等待核验</dd></div>
+    <div><dt>行情数据距今</dt><dd id="monitor-age" class="numeric">等待核验</dd></div>
+  </dl>
+  <div class="monitor-analysis" aria-live="polite">
+    <h3 id="monitor-headline">等待服务校验，尚不展示当前分析。</h3>
+    <dl class="monitor-counts">
+      <div><dt>信号记录</dt><dd id="monitor-signals" class="numeric">不可用</dd></div>
+      <div><dt>风险阻断</dt><dd id="monitor-blocked" class="numeric">不可用</dd></div>
+      <div><dt>观察状态</dt><dd id="monitor-watch" class="numeric">不可用</dd></div>
+      <div><dt>Demo 候选</dt><dd id="monitor-candidates" class="numeric">不可用</dd></div>
+    </dl>
+    <ul id="monitor-findings" class="plain-list"></ul>
+  </div>
+  <p id="monitor-note" class="microcopy">后台调度频率与页面核验频率分开记录。</p>
+  <p class="microcopy">页面每 60 秒只读核验本区服务状态，并非每 60 秒采集行情。页面后台暂停、离线、超时或门禁失败时隐藏旧派生分析；恢复后重新核验。首次核验建立基线，此后每轮小时级检查成功完成并通过门禁后，自动重新载入整页报表；也可手动重新载入。更新仍仅针对固定 Demo 的研究与健康检查，不生成新的市场价格。</p>
+  <details><summary>本次分析来源与版本</summary><p>数据快照：</p><ul id="monitor-snapshots" class="source-list"></ul><p>来源：</p><ul id="monitor-sources" class="source-list"></ul><p>代码版本：<code id="monitor-code">等待核验</code></p><p id="monitor-disclaimer" class="microcopy">仅供内部研究，不构成交易指令；DEMO_FIXTURE 不是实时行情。</p></details>
+  <div id="monitor-health-alert" class="data-health-alert monitor-gate-notice" role="alert">尚未完成服务核验，旧候选、模拟组合及其他派生分析暂不展示。数据源健康和审计仍可查看。</div>
+  <noscript><p class="data-health-alert">浏览器未启用脚本，无法自动核验服务健康，派生研究报表保持隐藏。请启用脚本后重新载入。</p></noscript>
+</section>
+
+<section id="overview" class="metric-grid" aria-label="关键指标" data-monitor-sensitive>
+  <article class="metric-card metric-card--primary">
+    <span class="metric-card__label">ETF 池</span>
+    <strong>{{ number(stats.etf_count|default(signals|length), 0) }}</strong>
+    <small>配置化、非杠杆、非反向</small>
+  </article>
+  <article class="metric-card">
+    <span class="metric-card__label">候选状态</span>
+    <strong>{{ number(stats.candidate_count|default(0), 0) }}</strong>
+    <small>仅供授权人员进一步审查</small>
+  </article>
+  <article class="metric-card metric-card--warning">
+    <span class="metric-card__label">风险阻断</span>
+    <strong>{{ number(stats.blocked_count|default(0), 0) }}</strong>
+    <small>BLOCKED_BY_RISK</small>
+  </article>
+  <article class="metric-card metric-card--danger">
+    <span class="metric-card__label">数据过期</span>
+    <strong>{{ number(stats.stale_count|default(signals|selectattr('state', 'equalto', 'DATA_STALE')|list|length), 0) }}</strong>
+    <small>过期时仅允许数据健康告警</small>
+  </article>
+  <article class="metric-card">
+    <span class="metric-card__label">待处理预警</span>
+    <strong>{{ number(stats.unacknowledged_alerts|default(stats.alert_count|default(alerts|length)), 0) }}</strong>
+    <small>站内渠道 / 去重 / 冷却</small>
+  </article>
+</section>
+
+<section id="signals" class="panel panel--wide" aria-labelledby="signals-title" data-monitor-sensitive>
+  <div class="panel__header">
+    <div><p class="section-index">01</p><h2 id="signals-title">ETF 筛选与排序</h2></div>
+    <div class="panel-tools">
+      <label class="search-field"><span class="sr-only">搜索 ETF</span><input type="search" id="signal-search" placeholder="搜索名称、代码或类别" autocomplete="off"></label>
+      <label><span class="sr-only">候选状态</span><select id="signal-state-filter">
+        <option value="">全部状态</option>
+        <option>NO_ACTION</option><option>WATCH</option><option>ENTRY_CANDIDATE</option>
+        <option>HOLD</option><option>REDUCE_CANDIDATE</option><option>EXIT_CANDIDATE</option>
+        <option>BLOCKED_BY_RISK</option><option>DATA_STALE</option>
+      </select></label>
+      <label><span class="sr-only">排序方式</span><select id="signal-sort">
+        <option value="default">默认顺序</option>
+        <option value="score-desc">综合分降序</option>
+        <option value="scenario-strength-desc">规则情景强度降序</option>
+        <option value="name-asc">名称升序</option>
+      </select></label>
+    </div>
+  </div>
+  <div class="chart-frame" aria-labelledby="signal-distribution-title">
+    <div class="chart-frame__heading">
+      <div><h3 id="signal-distribution-title">候选状态分布</h3><p>从本页服务端渲染的信号表动态汇总，不包含客户端外部数据请求。</p></div>
+      <span class="context-label">ECharts 5.6.0 · SRI 锁定</span>
+    </div>
+    <div id="signal-state-chart" class="chart" role="img" aria-label="ETF 候选状态数量柱状图"></div>
+    <p class="chart-fallback" data-chart-fallback>图表库离线或完整性校验未通过；下方完整数据表仍可查看和审计。</p>
+  </div>
+  <div class="table-scroll">
+    <table id="signals-table">
+      <caption class="sr-only">ETF 信号筛选结果</caption>
+      <thead><tr><th>ETF / 统一标识</th><th>分类</th><th>候选状态</th><th class="numeric-column">规则情景强度</th><th class="numeric-column">数据置信度</th><th class="numeric-column">综合分</th><th>数据截止</th><th>风险规则</th><th>追溯</th></tr></thead>
+      <tbody>
+      {% for signal in signals %}
+        {% set instrument = signal.instrument|default({}, true) %}
+        <tr data-signal-row data-state="{{ signal.state|default('') }}" data-score="{{ signal.composite_score|default(0, true) }}" data-scenario-strength="{{ signal.probability|default(0, true) }}" data-name="{{ instrument.name_zh|default(signal.name_zh|default(''))|lower }}" data-default-order="{{ loop.index0 }}" data-search="{{ (instrument.name_zh|default(signal.name_zh|default('')) ~ ' ' ~ instrument.provider_symbol|default(signal.provider_symbol|default('')) ~ ' ' ~ instrument.asset_class|default(signal.asset_class|default('')))|lower }}">
+          <td><strong>{{ instrument.name_zh|default(signal.name_zh|default('未命名 ETF')) }}</strong><small>{{ instrument.provider_symbol|default(signal.provider_symbol|default('—')) }} · {{ signal.instrument_id|default(instrument.id|default('—')) }}</small></td>
+          <td>{{ instrument.asset_class|default(signal.asset_class|default('—')) }}<small>{{ instrument.region|default(signal.region|default('—')) }}</small></td>
+          <td>{{ state_badge(signal.state) }}<small>{{ mode_badge(signal.data_mode) }}</small></td>
+          <td class="numeric-column">{{ percent(signal.probability) }}</td>
+          <td class="numeric-column">{{ percent(signal.confidence) }}</td>
+          <td class="numeric-column">{{ number(signal.composite_score, 3) }}</td>
+          <td>{{ timestamp(signal.data_as_of) }}<small>{{ value_or_dash(signal.latency_status) }}</small></td>
+          <td>{% if signal.risk_rules_hit %}{{ signal.risk_rules_hit|join('、') }}{% else %}<span class="muted">未命中</span>{% endif %}</td>
+          <td><a class="text-link" href="/signals/{{ signal.id }}">查看证据链<span aria-hidden="true"> →</span></a></td>
+        </tr>
+      {% else %}
+        {{ empty_row(9, '尚无信号记录；请先运行可复现 Demo 闭环') }}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="filter-empty" id="signal-filter-empty" hidden>没有符合当前筛选条件的 ETF。</p>
+</section>
+
+<div class="two-column-grid">
+  <section id="news" class="panel" aria-labelledby="news-title" data-monitor-sensitive>
+    <div class="panel__header"><div><p class="section-index">02</p><h2 id="news-title">新闻事件与 ETF 暴露</h2></div><span class="context-label">只生成风险预警</span></div>
+    <div class="stack-list">
+    {% for event in news_events %}
+      {% set event_source_uri = event.source_uri|default('', true) %}
+      <article class="stack-item">
+        <div class="stack-item__top"><span class="severity-dot severity-dot--{{ 'high' if event.severity|default(0) >= 0.7 else 'normal' }}"></span><h3>{{ value_or_dash(event.title) }}</h3></div>
+        <p>{{ value_or_dash(event.short_summary) }}</p>
+        <dl class="inline-metrics">
+          <div><dt>相关度</dt><dd>{{ percent(event.relevance) }}</dd></div>
+          <div><dt>严重度</dt><dd>{{ percent(event.severity) }}</dd></div>
+          <div><dt>新颖度</dt><dd>{{ percent(event.novelty) }}</dd></div>
+        </dl>
+        <p class="microcopy">首次可知：{{ timestamp(event.first_seen_at) }} · 来源：{{ value_or_dash(event.source_name) }}{% if event_source_uri.startswith('https://') %} · <a href="{{ event_source_uri }}" target="_blank" rel="noopener noreferrer nofollow">查看原链接</a>{% endif %} · {{ mode_badge(event.data_mode) }}</p>
+        {% if event.exposures %}<p class="exposure-line"><strong>关联依据：</strong>{% for exposure in event.exposures %}{{ exposure.reason|default(exposure.type|default('暴露匹配')) }}{% if not loop.last %}、{% endif %}{% endfor %}</p>{% endif %}
+      </article>
+    {% else %}<p class="empty-state">暂无通过来源、时间、实体匹配和许可校验的新闻事件。</p>{% endfor %}
+    </div>
+  </section>
+
+  <section id="events" class="panel" aria-labelledby="events-title" data-monitor-sensitive>
+    <div class="panel__header"><div><p class="section-index">03</p><h2 id="events-title">已知事件风险窗口</h2></div><span class="context-label">可配置提前预警</span></div>
+    <div class="timeline">
+    {% for event in upcoming_events %}
+      {% set event_source_uri = event.source_uri|default('', true) %}
+      <article class="timeline__item">
+        {{ timestamp(event.scheduled_at) }}<h3>{{ value_or_dash(event.title|default(event.name_zh)) }}</h3>
+        <p>{{ value_or_dash(event.event_type) }} · {{ event.region|default(event.regions|default([], true)|join('、'), true) or '—' }}</p>
+        <small>来源：{% if event_source_uri.startswith('https://') %}<a href="{{ event_source_uri }}" target="_blank" rel="noopener noreferrer nofollow">{{ event_source_uri }}</a>{% else %}未记录可访问的 HTTPS 来源{% endif %} · {{ mode_badge(event.data_mode) }}</small>
+      </article>
+    {% else %}<p class="empty-state">暂无已公布日期且通过许可校验的事件。系统不声称预知突发新闻。</p>{% endfor %}
+    </div>
+  </section>
+</div>
+
+<section id="portfolio" class="panel panel--wide" aria-labelledby="portfolio-title" data-monitor-sensitive>
+  <div class="panel__header"><div><p class="section-index">04</p><h2 id="portfolio-title">模拟组合与账本</h2></div><span class="context-label">SimulationLedger · 不连接券商</span></div>
+  {% if portfolio.valuation_error %}<div class="data-health-alert" role="alert"><strong>数据健康告警：当前估值不可用</strong><p>{{ portfolio.valuation_error }}。系统已失败关闭，不得把现金冒充组合净值，也不得将回撤显示为零。</p></div>{% endif %}
+  <div class="portfolio-summary">
+    <dl><div><dt>现金</dt><dd>{{ money(portfolio.cash) }}</dd></div><div><dt>组合参考净值</dt><dd>{{ money(portfolio.nav) }}</dd></div><div><dt>累计费用</dt><dd>{{ money(portfolio.total_fees) }}</dd></div><div><dt>最大回撤</dt><dd>{{ percent(portfolio.max_drawdown) }}</dd></div></dl>
+    <p><strong>估值时点：</strong>{{ timestamp(portfolio.valuation_time) }}。模拟成交必须使用信号后的下一可成交 bar，并记录费用、滑点、汇率和幂等键。本页不提供任何券商订单入口。</p>
+  </div>
+  <div class="table-scroll">
+    <table><caption class="sr-only">模拟持仓</caption><thead><tr><th>ETF</th><th class="numeric-column">数量</th><th class="numeric-column">平均成本</th><th class="numeric-column">参考价</th><th class="numeric-column">参考市值</th><th class="numeric-column">权重</th><th>数据模式</th></tr></thead><tbody>
+    {% for holding in holdings %}
+      {% set matched = namespace(name_zh='模拟持仓', symbol='') %}
+      {% for etf in etfs|default([], true) if etf.id|string == holding.instrument_id|string %}{% set matched.name_zh = etf.name_zh %}{% set matched.symbol = etf.provider_symbol %}{% endfor %}
+      <tr><td>{{ matched.name_zh }}<small>{{ matched.symbol }}{% if matched.symbol %} · {% endif %}{{ value_or_dash(holding.instrument_id) }}</small></td><td class="numeric-column">{{ number(holding.quantity, 0) }}</td><td class="numeric-column">{{ money(holding.average_cost) }}</td><td class="numeric-column">{{ money(holding.reference_price) }}</td><td class="numeric-column">{{ money(holding.market_value) }}</td><td class="numeric-column">{{ percent(holding.weight) }}</td><td>{{ mode_badge(holding.data_mode) }}</td></tr>
+    {% else %}{{ empty_row(7, '尚无可估值的模拟持仓；请先完成 Demo 成交与账本任务') }}{% endfor %}
+    </tbody></table>
+  </div>
+</section>
+
+<section id="backtests" class="panel panel--wide" aria-labelledby="backtests-title" data-monitor-sensitive>
+  <div class="panel__header"><div><p class="section-index">05</p><h2 id="backtests-title">回测报告与基线对比</h2></div><span class="context-label">无泄漏优先，不以盈利为强制验收</span></div>
+  {% if backtest and backtest.display_blocked_reason %}<div class="data-health-alert" role="alert"><strong>历史回测仅保留审计身份，绩效展示已阻断</strong><p>{{ backtest.display_blocked_reason }}。当前许可或快照完整性门禁未通过，旧指标不得作为当前研究决策证据。</p></div>{% endif %}
+  <div class="table-scroll">
+    <table><caption class="sr-only">回测试验结果</caption><thead><tr><th>试验</th><th>状态</th><th class="numeric-column">CAGR</th><th class="numeric-column">年化波动</th><th class="numeric-column">Sharpe</th><th class="numeric-column">Sortino</th><th class="numeric-column">最大回撤</th><th class="numeric-column">Calmar</th><th class="numeric-column">换手率</th><th class="numeric-column">费用</th><th>基线结论</th></tr></thead><tbody>
+    {% for experiment in backtests %}
+      {% set metrics = experiment.metrics|default({}, true) %}
+      <tr><td><strong>CrossSectionalMomentumBaselineV1</strong><small>简化横截面动量 Demo 回测 · 实验记录：{{ value_or_dash(experiment.name) }} · {{ value_or_dash(experiment.experiment_key) }}</small></td><td>{{ state_badge(experiment.status) }}</td><td class="numeric-column">{{ percent(metrics.cagr) }}</td><td class="numeric-column">{{ percent(metrics.annualized_volatility) }}</td><td class="numeric-column">{{ number(metrics.sharpe) }}</td><td class="numeric-column">{{ number(metrics.sortino) }}</td><td class="numeric-column">{{ percent(metrics.max_drawdown) }}</td><td class="numeric-column">{{ number(metrics.calmar) }}</td><td class="numeric-column">{{ percent(metrics.turnover) }}</td><td class="numeric-column">{{ percent(metrics.cost_total) }}</td><td>{{ '许可/完整性失败，仅留审计' if experiment.display_blocked_reason else ('未优于基线，仅限实验' if experiment.status in ['EXPERIMENTAL', 'REJECTED'] else '待人工复核完整基线指标') }}</td></tr>
+    {% else %}{{ empty_row(11, '尚无已记录回测；不展示未实际执行的绩效') }}{% endfor %}
+    </tbody></table>
+  </div>
+  {% for experiment in backtests %}
+    {% set metrics = experiment.metrics|default({}, true) %}
+    {% set baseline_metrics = experiment.baseline_metrics|default({}, true) %}
+    {% if baseline_metrics %}
+    <h3 class="subsection-title">同口径基线对比</h3>
+    <div class="table-scroll"><table><caption class="sr-only">买入持有、等权和简单动量基线对比</caption><thead><tr><th>策略</th><th class="numeric-column">CAGR</th><th class="numeric-column">年化波动</th><th class="numeric-column">Sharpe</th><th class="numeric-column">Sortino</th><th class="numeric-column">最大回撤</th><th class="numeric-column">Calmar</th></tr></thead><tbody>
+      <tr><td><strong>CrossSectionalMomentumBaselineV1</strong><small>简化横截面动量 Demo</small></td><td class="numeric-column">{{ percent(metrics.cagr) }}</td><td class="numeric-column">{{ percent(metrics.annualized_volatility) }}</td><td class="numeric-column">{{ number(metrics.sharpe) }}</td><td class="numeric-column">{{ number(metrics.sortino) }}</td><td class="numeric-column">{{ percent(metrics.max_drawdown) }}</td><td class="numeric-column">{{ number(metrics.calmar) }}</td></tr>
+      {% for baseline_name, baseline in baseline_metrics.items() %}<tr><td>{{ baseline_labels.get(baseline_name, baseline_name) }}</td><td class="numeric-column">{{ percent(baseline.cagr) }}</td><td class="numeric-column">{{ percent(baseline.annualized_volatility) }}</td><td class="numeric-column">{{ number(baseline.sharpe) }}</td><td class="numeric-column">{{ number(baseline.sortino) }}</td><td class="numeric-column">{{ percent(baseline.max_drawdown) }}</td><td class="numeric-column">{{ number(baseline.calmar) }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endif %}
+    {% set periods = experiment.periods|default({}, true) %}
+    {% if periods %}
+    <h3 class="subsection-title">分期结果</h3>
+    <div class="table-scroll"><table><caption class="sr-only">训练、验证、最终未触碰测试和压力时期结果</caption><thead><tr><th>时期</th><th class="numeric-column">CAGR</th><th class="numeric-column">年化波动</th><th class="numeric-column">Sharpe</th><th class="numeric-column">Sortino</th><th class="numeric-column">最大回撤</th><th class="numeric-column">Calmar</th></tr></thead><tbody>
+      {% for period_name, period in periods.items() %}<tr><td>{{ period_labels.get(period_name, period_name) }}</td><td class="numeric-column">{{ percent(period.cagr) }}</td><td class="numeric-column">{{ percent(period.annualized_volatility) }}</td><td class="numeric-column">{{ number(period.sharpe) }}</td><td class="numeric-column">{{ number(period.sortino) }}</td><td class="numeric-column">{{ percent(period.max_drawdown) }}</td><td class="numeric-column">{{ number(period.calmar) }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endif %}
+    <p class="microcopy">CAGR 区块 bootstrap 95% 区间：{{ percent(metrics.bootstrap_cagr_ci_low) }} – {{ percent(metrics.bootstrap_cagr_ci_high) }}。当前回测是 <code>CrossSectionalMomentumBaselineV1</code> 简化横截面动量/趋势演示，不是线上 <code>RuleBasedV1</code> 全因子历史重放；结果必须与 available_at、下一 bar 执行和成本单调性测试证据一起阅读。</p>
+  {% else %}<p class="microcopy">完整结果必须包含训练期、验证期、未触碰测试期、压力期，以及 available_at、下一 bar 执行、成本单调性等泄漏检查。</p>{% endfor %}
+</section>
+
+<section id="alerts" class="panel panel--wide" aria-labelledby="alerts-title" data-monitor-sensitive>
+  <div class="panel__header"><div><p class="section-index">06</p><h2 id="alerts-title">预警中心</h2></div><span class="context-label">去重 · 冷却期 · 静默时段 · 每日上限</span></div>
+  {% set blocked_alert_views = alerts|selectattr('display_blocked_reason')|list %}{% if blocked_alert_views %}<div class="data-health-alert" role="alert"><strong>部分历史预警派生内容已失败关闭</strong><p>当前许可、来源血缘或内容完整性未通过；系统仅保留脱敏审计身份，不展示旧正文、置信度或来源。</p></div>{% endif %}
+  <div class="alert-list">
+  {% for alert in alerts %}
+    <article class="alert-card alert-card--{{ alert.severity|default('info')|lower }}">
+      <div class="alert-card__head"><span class="status-badge">{{ value_or_dash(alert.severity) }}</span><h3>{{ value_or_dash(alert.title) }}</h3><span>{{ value_or_dash(alert.status) }}</span></div>
+      <p>{{ value_or_dash(alert.trigger_reason) }}</p>
+      <dl class="inline-metrics"><div><dt>数据截止</dt><dd>{{ timestamp(alert.data_as_of) }}</dd></div><div><dt>延迟</dt><dd>{{ value_or_dash(alert.latency_status) }}</dd></div><div><dt>置信度</dt><dd>{{ percent(alert.confidence) }}</dd></div><div><dt>渠道</dt><dd>{{ value_or_dash(alert.channel) }}</dd></div></dl>
+      {% if alert.invalidation_conditions %}<p class="microcopy">失效条件：{{ alert.invalidation_conditions|join('、') }}</p>{% endif %}
+      <details class="notification-details"><summary>来源与通知声明</summary><ul class="source-list">{% for link in alert.source_links|default([], true) %}{% if link.startswith('https://') %}<li><a href="{{ link }}" target="_blank" rel="noopener noreferrer nofollow">来源 {{ loop.index }}</a></li>{% else %}<li>已隐藏非 HTTPS 来源地址</li>{% endif %}{% else %}<li>未记录可访问的来源链接。</li>{% endfor %}</ul><p class="microcopy">{{ value_or_dash(alert.disclaimer) }}</p></details>
+      {% if alert.status not in ['ACKNOWLEDGED', 'SUPPRESSED'] %}<button class="secondary-button" type="button" data-acknowledge-alert="{{ alert.id }}">确认已知（不执行交易）</button><span class="action-feedback" role="status" aria-live="polite"></span>{% endif %}
+    </article>
+  {% else %}<p class="empty-state">暂无预警。数据过期时系统只应生成数据健康告警。</p>{% endfor %}
+  </div>
+</section>
+
+<div class="two-column-grid">
+  <section id="providers" class="panel" aria-labelledby="providers-title">
+    <div class="panel__header"><div><p class="section-index">07</p><h2 id="providers-title">数据源健康与许可</h2></div></div>
+    <div class="table-scroll"><table><caption class="sr-only">数据供应商健康与许可</caption><thead><tr><th>供应商</th><th>审核</th><th>健康</th><th>延迟</th><th>权利缺口</th></tr></thead><tbody>
+    {% for provider in providers %}<tr><td><strong>{{ value_or_dash(provider.display_name) }}</strong><small>{{ value_or_dash(provider.provider_code) }}</small></td><td>{{ state_badge(provider.review_status) }}</td><td>{% if provider.provider_code == 'demo_fixture' %}Demo 固定可复现{% elif provider.review_status == 'APPROVED' %}待采集验证{% else %}未启用 / 未验证{% endif %}</td><td>{{ '固定夹具' if provider.provider_code == 'demo_fixture' else '未启用 / 未记录' }}</td><td>{% set rights = [] %}{% if not provider.display_right %}{% set _ = rights.append('展示权') %}{% endif %}{% if not provider.non_display_algorithm_right %}{% set _ = rights.append('非展示算法权') %}{% endif %}{% if not provider.cache_right %}{% set _ = rights.append('缓存权') %}{% endif %}{% if not provider.training_right %}{% set _ = rights.append('训练权') %}{% endif %}{{ rights|join('、') or '无已记录缺口' }}</td></tr>{% else %}{{ empty_row(5, '尚无 provider_registry 记录；未登记数据源必须阻断') }}{% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <section id="models" class="panel" aria-labelledby="models-title" data-monitor-sensitive>
+    <div class="panel__header"><div><p class="section-index">08</p><h2 id="models-title">模型版本、校准与漂移</h2></div><span class="context-label">人工晋级</span></div>
+    {% set blocked_model_views = models|selectattr('display_blocked_reason')|list %}{% if blocked_model_views %}<div class="data-health-alert" role="alert"><strong>派生模型指标展示已阻断</strong><p>训练快照的当前许可或完整性未通过；相关模型只保留审计身份，不得读取旧 Brier、ECE 或局限说明作为当前决策证据。</p></div>{% endif %}
+    <div class="table-scroll"><table><caption class="sr-only">模型治理</caption><thead><tr><th>模型</th><th>状态</th><th class="numeric-column">校准</th><th>漂移</th><th>使用门禁</th><th>审批</th></tr></thead><tbody>
+    {% for model in models %}{% set model_metrics = model.metrics|default({}, true) %}<tr><td><strong>{{ value_or_dash(model.model_name) }}</strong><small>{{ value_or_dash(model.version) }} / {{ value_or_dash(model.feature_version) }}</small></td><td>{{ state_badge(model.status) }}</td><td class="numeric-column">{% if model_metrics.expected_calibration_error is defined %}ECE {{ number(model_metrics.expected_calibration_error, 4) }}<small>Brier {{ number(model_metrics.brier_score, 4) }}</small>{% else %}未校准 / 不适用{% endif %}</td><td>{{ model_metrics.drift_status|default('未记录', true) }}</td><td>{{ model_metrics.governance_scope|default('未记录', true) }}<small>真实数据候选：{{ model_metrics.real_data_candidate_gate|default('BLOCKED', true) }}</small></td><td>{{ model.approved_by|default('未批准', true) }}</td></tr>{% else %}{{ empty_row(6, '尚无模型版本记录；未通过基线对比的模型不得晋级') }}{% endfor %}
+    </tbody></table></div>
+    <p class="microcopy">RuleBasedV1 在固定 Demo 中也仅为 <code>EXPERIMENTAL</code>，候选状态不代表真实市场模型批准。任何晋级必须由研究、风控和合规人工审批。</p>
+  </section>
+</div>
+
+<section id="governance" class="panel panel--wide" aria-labelledby="governance-title">
+  <div class="panel__header"><div><p class="section-index">09</p><h2 id="governance-title">审计日志与任务健康</h2></div><span class="context-label">追加写 · 哈希链</span></div>
+  <div class="audit-grid">
+    <div class="table-scroll"><table><caption class="sr-only">审计日志</caption><thead><tr><th>时间</th><th>事件</th><th>对象</th><th>执行者</th><th>记录哈希</th></tr></thead><tbody>
+    {% for log in audit_logs %}<tr><td>{{ timestamp(log.occurred_at) }}</td><td>{{ value_or_dash(log.event_type) }}</td><td>{{ value_or_dash(log.object_type) }}<small>{{ value_or_dash(log.object_id) }}</small></td><td>{{ value_or_dash(log.actor) }}</td><td><code>{{ log.record_hash|default('—', true)|truncate(18, true, '…') }}</code></td></tr>{% else %}{{ empty_row(5, '尚无审计日志') }}{% endfor %}
+    </tbody></table></div>
+    <div class="task-list">
+      <h3>最近任务</h3>
+      {% for task in task_runs %}<article><span>{{ state_badge(task.status) }}</span><strong>{{ value_or_dash(task.task_name) }}</strong><small>{{ timestamp(task.completed_at if task.completed_at else task.started_at) }}</small></article>{% else %}<p class="empty-state">尚无任务运行记录。</p>{% endfor %}
+    </div>
+  </div>
+</section>
+
+<section id="settings" class="panel panel--wide" aria-labelledby="settings-title">
+  <div class="panel__header"><div><p class="section-index">10</p><h2 id="settings-title">系统设置与强制边界</h2></div><span class="context-label">只读展示</span></div>
+  <dl class="settings-grid">
+    <div><dt>TRADING_MODE</dt><dd>paper</dd></div>
+    <div><dt>全局 Kill switch</dt><dd>{{ '已开启' if settings_view.global_kill_switch else '未开启' }}</dd></div>
+    <div><dt>单只 ETF 上限</dt><dd>{{ percent(settings_view.single_etf_cap) }}</dd></div>
+    <div><dt>现金下限</dt><dd>{{ percent(settings_view.cash_floor) }}</dd></div>
+    <div><dt>最大换手率</dt><dd>{{ percent(settings_view.max_turnover) }}</dd></div>
+    <div><dt>组合波动目标</dt><dd>{{ percent(settings_view.portfolio_volatility_target) }}</dd></div>
+    <div><dt>对外服务</dt><dd>禁用</dd></div>
+    <div><dt>真实交易 / 订单入口</dt><dd>禁用</dd></div>
+  </dl>
+  <p class="boundary-note">配置为 live、启用公众服务、购买导流、第三方资金管理或订单入口时，系统必须拒绝启动。</p>
+</section>
+{% endblock %}

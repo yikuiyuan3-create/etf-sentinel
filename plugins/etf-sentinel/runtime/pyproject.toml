@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "etf-sentinel"
+version = "0.1.0"
+description = "Internal ETF decision-support and risk-warning MVP"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = {text = "Proprietary - internal use only"}
+authors = [{name = "ETF Sentinel Team"}]
+dependencies = [
+  "alembic==1.19.1",
+  "celery[redis]==5.6.3",
+  "duckdb==1.5.5",
+  "fastapi==0.141.1",
+  "httpx==0.28.1",
+  "jinja2==3.1.6",
+  "numpy==2.5.2",
+  "pandas==3.0.5",
+  "psycopg[binary]==3.3.5",
+  "pyarrow==25.0.1",
+  "pydantic==2.13.5",
+  "pydantic-settings==2.15.0",
+  "python-multipart==0.0.32",
+  "redis==6.4.0",
+  "scikit-learn==1.9.0",
+  "scipy==1.18.1",
+  "sqlalchemy==2.0.52",
+  "structlog==26.1.0",
+  "tenacity==9.1.4",
+  "uvicorn[standard]==0.52.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy==2.3.1",
+  "pytest==9.1.1",
+  "pytest-cov==7.1.0",
+  "ruff==0.16.6",
+]
+
+[project.scripts]
+etf-sentinel = "etf_sentinel.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/etf_sentinel"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+  "integration: exercises storage or module collaboration",
+  "e2e: exercises the user-visible demo workflow",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "ASYNC"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106"]
+"alembic/**/*.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["etf_sentinel"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+no_implicit_optional = true
