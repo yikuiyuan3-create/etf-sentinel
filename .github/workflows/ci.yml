@@ -40,9 +40,9 @@ jobs:
       run:
         working-directory: plugins/etf-sentinel/runtime
     env:
-      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/etf-runtime-venv
-      UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
-      UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/uv-python
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/../etf-runtime-venv
+      UV_CACHE_DIR: ${{ github.workspace }}/../uv-cache
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/../uv-python
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
