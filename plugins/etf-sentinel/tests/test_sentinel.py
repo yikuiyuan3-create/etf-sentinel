@@ -21,6 +21,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sentinel.py"
 spec = importlib.util.spec_from_file_location("sentinel_client", SCRIPT)
 client = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(client)
+SIGNALS_PATH = "/api/v1/plugin/signals?limit=10"
 
 
 def envelope(data, mode="DEMO_FIXTURE"):
@@ -67,11 +68,8 @@ def fixtures():
         "risk_rules_hit": [],
         "code_version": "tree-12345678",
         "is_current": True,
-        "feature_values": {"portfolio": "PRIVATE_INTERNAL_TEXT"},
-        "supporting_evidence": [{"secret": "PRIVATE_INTERNAL_TEXT"}],
-        "source_links": ["https://private.invalid/PRIVATE_INTERNAL_TEXT"],
     }
-    return {
+    routes = {
         "/health/ready": {
             "status": "ok",
             "trading_mode": "paper",
@@ -79,7 +77,7 @@ def fixtures():
             "data_mode": "DEMO_FIXTURE",
         },
         "/api/v1/monitoring": envelope(monitoring),
-        "/api/v1/signals": envelope([signal]),
+        SIGNALS_PATH: envelope([signal]),
         "/api/v1/providers": envelope(
             [
                 {
@@ -123,6 +121,10 @@ def fixtures():
         ),
     }
 
+    for limit in (1, 2, 5, 20):
+        routes[f"/api/v1/plugin/signals?limit={limit}"] = routes[SIGNALS_PATH]
+    return routes
+
 
 @contextlib.contextmanager
 def local_server(routes):
@@ -131,7 +133,7 @@ def local_server(routes):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             calls.append((self.command, self.path))
-            value = routes[self.path]
+            value = routes.get(self.path, (404, {"Content-Type": "application/json"}, {}, 0))
             headers = {"Content-Type": "application/json"}
             status = 200
             if isinstance(value, tuple):
@@ -235,7 +237,7 @@ class SentinelClientTests(unittest.TestCase):
         routes = fixtures()
         routes["/health/ready"] = (
             302,
-            {"Location": "/api/v1/signals"},
+            {"Location": SIGNALS_PATH},
             b"PRIVATE_INTERNAL_TEXT",
             0,
         )
@@ -291,7 +293,7 @@ class SentinelClientTests(unittest.TestCase):
             self.assert_blocked(client.run("signals", base_url=base), "RESPONSE_TOO_LARGE")
 
     def test_non_demo_health_and_envelopes_never_return_analysis(self):
-        for path in ("/health/ready", "/api/v1/monitoring", "/api/v1/signals"):
+        for path in ("/health/ready", "/api/v1/monitoring", SIGNALS_PATH):
             routes = fixtures()
             routes[path]["data_mode"] = "LIVE_LICENSED"
             with local_server(routes) as (base, _):
@@ -309,7 +311,7 @@ class SentinelClientTests(unittest.TestCase):
         for path, key in [
             ("/health/ready", "database"),
             ("/api/v1/monitoring", "checked_at"),
-            ("/api/v1/signals", "probability"),
+            (SIGNALS_PATH, "probability"),
         ]:
             routes = fixtures()
             item = routes[path] if path == "/health/ready" else routes[path]["data"]
@@ -330,7 +332,7 @@ class SentinelClientTests(unittest.TestCase):
             routes["/api/v1/monitoring"]["data"][field] = value
             with local_server(routes) as (base, calls):
                 self.assert_blocked(client.run("signals", base_url=base), "DATA_HEALTH_BLOCKED")
-            self.assertNotIn(("GET", "/api/v1/signals"), calls)
+            self.assertNotIn(("GET", SIGNALS_PATH), calls)
 
     def test_status_hides_candidate_counts_when_blocked(self):
         routes = fixtures()
@@ -357,20 +359,82 @@ class SentinelClientTests(unittest.TestCase):
             ("is_current", False),
         ]:
             routes = fixtures()
-            bad = copy.deepcopy(routes["/api/v1/signals"]["data"][0])
+            bad = copy.deepcopy(routes[SIGNALS_PATH]["data"][0])
             bad[key] = value
-            routes["/api/v1/signals"]["data"].append(bad)
+            routes[SIGNALS_PATH]["data"].append(bad)
             with local_server(routes) as (base, _):
-                self.assert_blocked(client.run("signals", base_url=base, limit=1))
+                self.assert_blocked(client.run("signals", base_url=base, limit=2))
 
-    def test_limit_and_all_returned_rows_validated_before_truncation(self):
+    def test_limit_is_sent_to_server_and_full_endpoint_is_never_read(self):
+        for limit in (1, 5, 10, 20):
+            with self.subTest(limit=limit), local_server(fixtures()) as (base, calls):
+                result = client.run("signals", base_url=base, limit=limit)
+                self.assertEqual(result["status"], "OK")
+                self.assertEqual(
+                    calls,
+                    [
+                        ("GET", "/health/ready"),
+                        ("GET", "/api/v1/monitoring"),
+                        ("GET", f"/api/v1/plugin/signals?limit={limit}"),
+                    ],
+                )
+
+    def test_oversized_result_is_rejected_instead_of_truncated(self):
         routes = fixtures()
-        row = routes["/api/v1/signals"]["data"][0]
-        routes["/api/v1/signals"]["data"] = [copy.deepcopy(row) for _ in range(25)]
+        row = routes[SIGNALS_PATH]["data"][0]
+        routes[SIGNALS_PATH]["data"] = [copy.deepcopy(row) for _ in range(2)]
+        with local_server(routes) as (base, calls):
+            self.assert_blocked(
+                client.run("signals", base_url=base, limit=1), "RESPONSE_LIMIT_EXCEEDED"
+            )
+        self.assertEqual(calls[-1], ("GET", "/api/v1/plugin/signals?limit=1"))
+
+    def test_invalid_limits_make_no_http_request(self):
+        with local_server(fixtures()) as (base, calls):
+            for limit in (0, 21, -1, True, 1.0, "5"):
+                self.assert_blocked(
+                    client.run("signals", base_url=base, limit=limit), "INVALID_ARGUMENT"
+                )
+        self.assertEqual(calls, [])
+
+    def test_old_backend_requires_upgrade_and_never_falls_back(self):
+        for status in (404, 405):
+            routes = fixtures()
+            routes["/api/v1/signals"] = routes[SIGNALS_PATH]
+            routes[SIGNALS_PATH] = (
+                status,
+                {"Content-Type": "application/json"},
+                b"PRIVATE_INTERNAL_TEXT",
+                0,
+            )
+            with local_server(routes) as (base, calls):
+                self.assert_blocked(client.run("signals", base_url=base), "UPGRADE_REQUIRED")
+            self.assertNotIn(("GET", "/api/v1/signals"), calls)
+
+    def test_signal_path_allowlist_rejects_extra_or_ambiguous_parameters(self):
+        with local_server(fixtures()) as (base, calls):
+            instance = client.SentinelClient(base)
+            for path in (
+                "/api/v1/signals",
+                "/api/v1/plugin/signals",
+                "/api/v1/plugin/signals?limit=0",
+                "/api/v1/plugin/signals?limit=21",
+                "/api/v1/plugin/signals?limit=01",
+                "/api/v1/plugin/signals?limit=1&limit=20",
+                "/api/v1/plugin/signals?limit=1&details=true",
+                "/api/v1/plugin/signals?limit=%31",
+                "/api/v1/plugin/signals?limit=1#fragment",
+                "/api/v1/plugin/signals?limit=1\n",
+            ):
+                with self.subTest(path=path), self.assertRaises(client.SafeError):
+                    instance.get(path)
+        self.assertEqual(calls, [])
+
+    def test_unexpected_private_fields_fail_closed(self):
+        routes = fixtures()
+        routes[SIGNALS_PATH]["data"][0]["feature_values"] = {"portfolio": "PRIVATE_INTERNAL_TEXT"}
         with local_server(routes) as (base, _):
-            self.assertEqual(len(client.run("signals", base_url=base)["data"]), 10)
-            self.assertEqual(len(client.run("signals", base_url=base, limit=20)["data"]), 20)
-            self.assert_blocked(client.run("signals", base_url=base, limit=21), "INVALID_ARGUMENT")
+            self.assert_blocked(client.run("signals", base_url=base), "INVALID_RESPONSE_SCHEMA")
 
     def test_provider_output_drops_purpose_and_uses_boolean_rights(self):
         with local_server(fixtures()) as (base, _):
@@ -388,13 +452,13 @@ class SentinelClientTests(unittest.TestCase):
     def test_non_finite_or_unexpected_schema_is_rejected(self):
         for value in [float("nan"), float("inf"), "0.5", True, -0.1, 1.1]:
             routes = fixtures()
-            routes["/api/v1/signals"]["data"][0]["probability"] = value
+            routes[SIGNALS_PATH]["data"][0]["probability"] = value
             with local_server(routes) as (base, _):
                 self.assert_blocked(client.run("signals", base_url=base))
 
     def test_signed_factor_scores_are_retained_without_turning_into_probabilities(self):
         routes = fixtures()
-        row = routes["/api/v1/signals"]["data"][0]
+        row = routes[SIGNALS_PATH]["data"][0]
         for key in ("market_score", "macro_score", "news_score", "composite_score"):
             row[key] = -0.25
         with local_server(routes) as (base, _):
@@ -410,7 +474,7 @@ class SentinelClientTests(unittest.TestCase):
             ("risk_rules_hit", ["PORTFOLIO_LIMIT:PRIVATE_INTERNAL_TEXT"]),
         ]:
             routes = fixtures()
-            routes["/api/v1/signals"]["data"][0][key] = value
+            routes[SIGNALS_PATH]["data"][0][key] = value
             with local_server(routes) as (base, _):
                 self.assert_blocked(client.run("signals", base_url=base))
 

@@ -1,6 +1,6 @@
 {
   "name": "etf-sentinel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "企业内部 ETF 研究与风险监测，本地 Demo 启动和只读分析，paper-only。",
   "author": {
     "name": "ETF Sentinel Team"
@@ -8,15 +8,27 @@
   "skills": "./skills/",
   "license": "Proprietary - internal use only",
   "repository": "https://github.com/yikuiyuan3-create/etf-sentinel",
-  "keywords": ["etf", "risk-monitoring", "internal-research", "paper-only"],
+  "keywords": [
+    "etf",
+    "risk-monitoring",
+    "internal-research",
+    "paper-only"
+  ],
   "interface": {
     "displayName": "ETF Sentinel · 内部研究",
     "shortDescription": "本地 ETF 演示、风险分析和许可健康检查。",
     "longDescription": "自带 FastAPI 中文看板和确定性 Demo 后端，通过只读本地接口解释研究状态。真实数据仍需企业许可、数据质量和人工审批；不提供交易或公众投顾服务。",
     "developerName": "ETF Sentinel Team",
     "category": "Productivity",
-    "capabilities": ["Read", "Local"],
+    "capabilities": [
+      "Read",
+      "Local"
+    ],
     "brandColor": "#2C6655",
-    "defaultPrompt": ["检查 ETF Sentinel 的数据许可和小时监测状态", "解释 Demo 候选状态及风险限制", "在独立目录启动 ETF Sentinel 演示看板"]
+    "defaultPrompt": [
+      "检查 ETF Sentinel 的数据许可和小时监测状态",
+      "解释 Demo 候选状态及风险限制",
+      "在独立目录启动 ETF Sentinel 演示看板"
+    ]
   }
 }

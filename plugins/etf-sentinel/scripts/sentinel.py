@@ -2,7 +2,7 @@
 """Read-only, loopback-only ETF Sentinel projection. Python standard library only.
 
 This client never starts services, gathers market data, changes server state, or
-returns private portfolio/audit/news payloads. Version 0.1 permits DEMO_FIXTURE
+returns private portfolio/audit/news payloads. Version 0.2 permits DEMO_FIXTURE
 research only; a live backend is deliberately blocked, not silently relabelled.
 """
 
@@ -151,12 +151,16 @@ class SentinelClient:
         self.mode = "UNKNOWN"
 
     def get(self, path):
+        plugin_signals = (
+            isinstance(path, str)
+            and re.fullmatch(r"/api/v1/plugin/signals\?limit=(?:[1-9]|1[0-9]|20)", path) is not None
+        )
         _schema(
-            path
+            plugin_signals
+            or path
             in {
                 "/health/ready",
                 "/api/v1/monitoring",
-                "/api/v1/signals",
                 "/api/v1/providers",
                 "/api/v1/models",
             }
@@ -168,7 +172,7 @@ class SentinelClient:
                 "Accept": "application/json",
                 "Accept-Encoding": "identity",
                 "Cache-Control": "no-cache, no-store",
-                "User-Agent": "ETF-Sentinel-Readonly-Plugin/0.1",
+                "User-Agent": "ETF-Sentinel-Readonly-Plugin/0.2",
             },
         )
         try:
@@ -187,6 +191,8 @@ class SentinelClient:
                     raise SafeError("RESPONSE_TOO_LARGE")
         except HTTPError as exc:
             code = "REDIRECT_BLOCKED" if 300 <= exc.code < 400 else "HTTP_ERROR"
+            if plugin_signals and exc.code in {404, 405}:
+                code = "UPGRADE_REQUIRED"
             exc.close()
             raise SafeError(code) from None
         except TimeoutError:
@@ -280,8 +286,11 @@ class SentinelClient:
         return result, healthy
 
     def signals(self, limit):
-        rows = self.envelope("/api/v1/signals")
-        _schema(isinstance(rows, list) and len(rows) <= 200)
+        _integer(limit, 1, 20)
+        rows = self.envelope(f"/api/v1/plugin/signals?limit={limit}")
+        _schema(isinstance(rows, list))
+        if len(rows) > limit:
+            raise SafeError("RESPONSE_LIMIT_EXCEEDED")
         result = []
         for value in rows:
             keys = (
@@ -307,6 +316,7 @@ class SentinelClient:
                 "is_current",
             )
             _fields(value, keys)
+            _schema(set(value) == set(keys))
             _demo(value["data_mode"])
             _schema(value["state"] in STATES and type(value["is_current"]) is bool)
             _schema(value["latency_status"] in {"ON_TIME", "STALE"})
@@ -328,18 +338,18 @@ class SentinelClient:
             _token(value["code_version"])
             rules = value["risk_rules_hit"]
             _schema(isinstance(rules, list) and len(rules) <= 100)
-            # Risk suffixes can contain portfolio identifiers or exposures; never export them.
+            # The server must remove risk suffixes before they cross the wire.
             safe_rules = []
             for rule in rules:
                 _schema(isinstance(rule, str) and len(rule) <= 256)
-                safe_rules.append(_token(rule.split(":", 1)[0], CODE))
+                safe_rules.append(_token(rule, CODE))
             if safe_rules and "CANDIDATE" in value["state"]:
                 raise SafeError("DATA_HEALTH_BLOCKED")
             row = {key: value[key] for key in keys}
             row["risk_rules_hit"] = sorted(set(safe_rules))
             result.append(row)
-        # Validate the full bounded response before returning even a single candidate.
-        return result[:limit]
+        # Validate the entire bounded response before returning any candidate.
+        return result
 
     def providers(self):
         rows = self.envelope("/api/v1/providers")

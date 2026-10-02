@@ -1,17 +1,19 @@
 from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, select, text
 from sqlalchemy.orm import Session
 
+from etf_sentinel import __version__
 from etf_sentinel.config import get_settings
 from etf_sentinel.database import get_db
 from etf_sentinel.enums import DISCLAIMER, DataMode
@@ -78,7 +80,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="ETF Sentinel",
     description="企业自有资金内部研究和风险监测；不提供交易功能。",
-    version="0.1.0",
+    version=__version__,
     docs_url="/api/docs" if settings.app_env != "production" else None,
     redoc_url=None,
     lifespan=lifespan,
@@ -382,6 +384,72 @@ def api_signals(db: DbSession) -> ApiEnvelope:
     return _envelope(
         db, [SignalResponse.model_validate(row).model_dump(mode="json") for row in rows]
     )
+
+
+@app.get("/api/v1/plugin/signals", response_model=ApiEnvelope)
+def api_plugin_signals(
+    db: DbSession, limit: Annotated[int, Query(ge=1, le=20)] = 10
+) -> ApiEnvelope:
+    """Bounded read-only projection; never send detailed signal payloads to a plugin."""
+    if settings.trading_mode != "paper":
+        raise HTTPException(status_code=403, detail="UNSAFE_TRADING_MODE")
+    if _current_data_mode(db) != DataMode.DEMO_FIXTURE.value:
+        raise HTTPException(status_code=403, detail="NON_DEMO_MODE_BLOCKED")
+    # Retain the global integrity/license/portfolio gates. Only the output
+    # selection is SQL-limited; server-side health checks remain comprehensive.
+    rows = _visible_signals(db, limit=limit)
+    return _envelope(db, [_plugin_signal_projection(row) for row in rows])
+
+
+def _plugin_signal_projection(row: Signal) -> dict[str, Any]:
+    if row.data_mode != DataMode.DEMO_FIXTURE.value:
+        raise HTTPException(status_code=403, detail="NON_DEMO_MODE_BLOCKED")
+    if not row.is_current or row.latency_status != "ON_TIME" or row.state == "DATA_STALE":
+        raise HTTPException(status_code=503, detail="DATA_HEALTH_BLOCKED")
+    keys = (
+        "id",
+        "instrument_id",
+        "data_snapshot_id",
+        "model_version_id",
+        "horizon_days",
+        "state",
+        "probability",
+        "confidence",
+        "market_score",
+        "macro_score",
+        "news_score",
+        "liquidity_score",
+        "composite_score",
+        "data_as_of",
+        "available_at",
+        "data_mode",
+        "latency_status",
+        "risk_rules_hit",
+        "code_version",
+        "is_current",
+    )
+    result = {key: getattr(row, key) for key in keys}
+    # SQLite drops timezone information; stored signal timestamps are UTC.
+    for key in ("data_as_of", "available_at"):
+        value = result[key]
+        result[key] = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    if not result["data_as_of"] <= result["available_at"] <= datetime.now(UTC):
+        raise HTTPException(status_code=503, detail="DATA_HEALTH_BLOCKED")
+    rules = row.risk_rules_hit
+    if not isinstance(rules, list) or len(rules) > 100:
+        raise HTTPException(status_code=503, detail="DATA_HEALTH_BLOCKED")
+    safe_rules = set()
+    for rule in rules:
+        if not isinstance(rule, str) or len(rule) > 256:
+            raise HTTPException(status_code=503, detail="DATA_HEALTH_BLOCKED")
+        code = rule.split(":", 1)[0]
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code) is None:
+            raise HTTPException(status_code=503, detail="DATA_HEALTH_BLOCKED")
+        safe_rules.add(code)
+    if safe_rules and "CANDIDATE" in row.state:
+        raise HTTPException(status_code=503, detail="DATA_HEALTH_BLOCKED")
+    result["risk_rules_hit"] = sorted(safe_rules)
+    return result
 
 
 @app.get("/api/v1/etfs", response_model=ApiEnvelope)

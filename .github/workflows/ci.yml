@@ -1,0 +1,66 @@
+name: Verify public plugin
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Plugin and release regression tests
+        run: |
+          python -m unittest discover -s plugins/etf-sentinel/tests -v
+          python -m unittest discover -s tests -v
+      - name: Verify the submitted inventory without rewriting it
+        run: python tools/verify_package.py
+      - name: Check reproducible release bytes
+        run: |
+          python tools/build_release.py --output-dir "$RUNNER_TEMP/release-a"
+          python tools/build_release.py --output-dir "$RUNNER_TEMP/release-b"
+          diff "$RUNNER_TEMP/release-a/SHA256SUMS" "$RUNNER_TEMP/release-b/SHA256SUMS"
+
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: plugins/etf-sentinel/runtime
+    env:
+      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/etf-runtime-venv
+      UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
+      UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/uv-python
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.12.1"
+          enable-cache: false
+      - name: Install pinned runtime and test dependencies
+        run: uv sync --frozen --all-extras --no-editable --python 3.12
+      - name: Runtime regression tests
+        run: uv run --no-sync pytest
+      - name: Browser monitoring contract tests
+        run: node --test tests/ui/test_monitor.cjs

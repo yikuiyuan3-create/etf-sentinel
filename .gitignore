@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 .uv-cache/
 .uv-python/
@@ -12,4 +14,13 @@ var/
 *.parquet
 *.dump
 *.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.zip
+*.tar
+*.gz
+backups/
+work/
 .DS_Store
