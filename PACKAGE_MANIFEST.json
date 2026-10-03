@@ -2,7 +2,7 @@
   "data_mode": "DEMO_FIXTURE",
   "files": {
     ".agents/plugins/marketplace.json": "93e5781adb38c630b422318b9924447cb7629ac9df5b082ee922bdb7ab20025e",
-    ".github/workflows/ci.yml": "9491f07ad5badb77e939fefe9f5332fb07e447d99448ee753d28fee41d257783",
+    ".github/workflows/ci.yml": "e1859ce6bcf55d2960ccd50e3d51227dd324b9376f28eaff668abae00f4032f9",
     ".gitignore": "503bc35c587457d85d14de2e579b9fef232e745722f8ea5484b04f03ce0b2369",
     "CHANGELOG.md": "2b2ddf0d6ffd1af25cf16dcf5e2b2dfe43a2c908ed2b5b6fcfb05f3f0278547b",
     "LICENSE": "5fc8caeab33cfa24caa01479623f4363106936d5d3860cd0cc2797b60befbd6a",

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   plugin-and-package:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -34,8 +34,8 @@ jobs:
           diff "$RUNNER_TEMP/release-a/SHA256SUMS" "$RUNNER_TEMP/release-b/SHA256SUMS"
 
   runtime:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: plugins/etf-sentinel/runtime
@@ -44,6 +44,10 @@ jobs:
       UV_CACHE_DIR: ${{ github.workspace }}/../uv-cache
       UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/../uv-python
       PYTHONDONTWRITEBYTECODE: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -60,7 +64,30 @@ jobs:
           enable-cache: false
       - name: Install pinned runtime and test dependencies
         run: uv sync --frozen --all-extras --no-editable --python 3.12
+      - name: Report numerical thread limits
+        run: |
+          uv run --no-sync python - <<'PY'
+          import json
+          import os
+          import numpy
+          import sklearn
+          from threadpoolctl import threadpool_info
+
+          safe_fields = ("user_api", "internal_api", "num_threads", "prefix", "version")
+          print(json.dumps({
+              "cpu_count": os.cpu_count(),
+              "threadpools": [
+                  {key: pool.get(key) for key in safe_fields}
+                  for pool in threadpool_info()
+              ],
+          }, sort_keys=True))
+          PY
+      - name: Diagnose isolated Demo CLI regression
+        run: >-
+          uv run --no-sync pytest
+          tests/e2e/test_demo_workflow.py::test_demo_cli_runs_without_any_provider_api_key
+          -x --tb=short --durations=5
       - name: Runtime regression tests
-        run: uv run --no-sync pytest
+        run: uv run --no-sync pytest -x --tb=short --durations=10
       - name: Browser monitoring contract tests
         run: node --test tests/ui/test_monitor.cjs
